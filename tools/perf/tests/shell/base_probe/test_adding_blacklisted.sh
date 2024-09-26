@@ -57,7 +57,7 @@ for BLACKFUNC in $BLACKFUNC_LIST; do
 
 	if [ $? -eq 0 ]; then
 		SKIP_DWARF=1
-		echo "Result polluted by broken DWARF, trying another probe"
+		echo "Result polluted by bad DWARF, trying another probe"
 
 		# confirm that the broken DWARF comes from assembler
 		if [ -n "$VMLINUX_FILE" ]; then
