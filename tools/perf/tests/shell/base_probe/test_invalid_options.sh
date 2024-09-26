@@ -1,5 +1,5 @@
 #!/bin/bash
-
+# Reject invalid options
 # SPDX-License-Identifier: GPL-2.0
 
 #

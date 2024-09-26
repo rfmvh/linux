@@ -1,5 +1,5 @@
 #!/bin/bash
-
+# Reject blacklisted probes
 # SPDX-License-Identifier: GPL-2.0
 
 #
