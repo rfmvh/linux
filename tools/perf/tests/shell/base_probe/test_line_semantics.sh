@@ -1,5 +1,5 @@
 #!/bin/bash
-
+# Check patters for line semantics
 # SPDX-License-Identifier: GPL-2.0
 
 #

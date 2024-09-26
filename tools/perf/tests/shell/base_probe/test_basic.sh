@@ -1,5 +1,5 @@
 #!/bin/bash
-
+# Basic perf probe functionality
 # SPDX-License-Identifier: GPL-2.0
 
 #

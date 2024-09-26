@@ -1,5 +1,5 @@
 #!/bin/bash
-
+# perftool-testsuite: base_report
 # SPDX-License-Identifier: GPL-2.0
 
 #

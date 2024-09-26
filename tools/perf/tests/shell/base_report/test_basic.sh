@@ -1,5 +1,5 @@
 #!/bin/bash
-
+# Basic perf report options
 # SPDX-License-Identifier: GPL-2.0
 
 #
