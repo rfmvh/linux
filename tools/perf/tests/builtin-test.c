@@ -5,6 +5,7 @@
  * Builtin regression testing command: ever growing number of sanity tests
  */
 #include <fcntl.h>
+#include <ftw.h>
 #include <errno.h>
 #include <poll.h>
 #include <unistd.h>
@@ -215,6 +216,86 @@ static bool test_exclusive(const struct test_suite *t, int subtest)
 		return t->test_cases[0].exclusive;
 
 	return t->test_cases[subtest].exclusive;
+}
+
+static int delete_file(const char *fpath, const struct stat *sb __maybe_unused,
+						 int typeflag, struct FTW *ftwbuf)
+{
+	int rv = -1;
+
+	/* Stop traversal if going too deep */
+	if (ftwbuf->level > 5) {
+		pr_err("Tree traversal reached level %d, stopping.", ftwbuf->level);
+		return rv;
+	}
+
+	/* Remove only expected directories */
+	if (typeflag == FTW_D || typeflag == FTW_DP){
+		const char *dirname = fpath + ftwbuf->base;
+
+		if (strcmp(dirname, "logs") && strcmp(dirname, "examples") &&
+			strcmp(dirname, "header_tar") && strncmp(dirname, "perf_", 5)) {
+				pr_err("Unknown directory %s", dirname);
+				return rv;
+			 }
+	}
+
+	/* Attempt to remove the file */
+	rv = remove(fpath);
+	if (rv)
+		pr_err("Failed to remove file: %s", fpath);
+
+	return rv;
+}
+
+static bool create_logs(struct test_suite *t, int pass){
+	bool store_logs = t->priv && ((struct shell_info*)(t->priv))->store_logs;
+	if (pass == 1 && (!test_exclusive(t, 0) || sequential || dont_fork)) {
+		/* Sequential and non-exclusive tests run on the first pass. */
+		return store_logs;
+	}
+	else if (pass != 1 && test_exclusive(t, 0) && !sequential && !dont_fork) {
+		/* Exclusive tests without sequential run on the second pass. */
+		return store_logs;
+	}
+	return false;
+}
+
+static char *setup_shell_logs(const char *name)
+{
+	char template[PATH_MAX];
+	char *temp_dir;
+
+	if (snprintf(template, PATH_MAX, "/tmp/perf_test_%s.XXXXXX", name) < 0) {
+		pr_err("Failed to create log dir template");
+		return NULL; /* Skip the testsuite */
+	}
+
+	temp_dir = mkdtemp(template);
+	if (temp_dir) {
+		setenv("PERFSUITE_RUN_DIR", temp_dir, 1);
+		return strdup(temp_dir);
+	}
+	else {
+		pr_err("Failed to create the temporary directory");
+	}
+
+	return NULL; /* Skip the testsuite */
+}
+
+static void cleanup_shell_logs(char *dirname)
+{
+	char *keep_logs = getenv("PERFTEST_KEEP_LOGS");
+
+	/* Check if logs should be kept or do cleanup */
+	if (dirname) {
+		if (!keep_logs || strcmp(keep_logs, "y") != 0) {
+			nftw(dirname, delete_file, 8, FTW_DEPTH | FTW_PHYS);
+		}
+		free(dirname);
+	}
+
+	unsetenv("PERFSUITE_RUN_DIR");
 }
 
 static bool perf_test__matches(const char *desc, int curr, int argc, const char *argv[])
@@ -548,6 +629,7 @@ static int __cmd_test(struct test_suite **suites, int argc, const char *argv[],
 
 		for (struct test_suite **t = suites; *t; t++) {
 			int curr = i++;
+			char *tmpdir = NULL;
 
 			if (!perf_test__matches(test_description(*t, -1), curr, argc, argv)) {
 				/*
@@ -572,23 +654,33 @@ static int __cmd_test(struct test_suite **suites, int argc, const char *argv[],
 				continue;
 			}
 
+			/* Setup temporary log directories for shell test suites */
+			if (create_logs(*t, pass)) {
+				tmpdir = setup_shell_logs((*t)->desc);
+
+				if (tmpdir == NULL)  /* Couldn't create log dir, skip test suite */
+					((struct shell_info*)((*t)->priv))->has_setup = FAILED_SETUP;
+			}
+
 			if (!has_subtests(*t)) {
 				err = start_test(*t, curr, -1, &child_tests[child_test_num++],
 						 width, pass);
 				if (err)
 					goto err_out;
-				continue;
 			}
-			for (int subi = 0, subn = num_subtests(*t); subi < subn; subi++) {
-				if (!perf_test__matches(test_description(*t, subi),
-							curr, argc, argv))
-					continue;
+			else {
+				for (int subi = 0, subn = num_subtests(*t); subi < subn; subi++) {
+					if (!perf_test__matches(test_description(*t, subi),
+								curr, argc, argv))
+						continue;
 
-				err = start_test(*t, curr, subi, &child_tests[child_test_num++],
-						 width, pass);
-				if (err)
-					goto err_out;
+					err = start_test(*t, curr, subi, &child_tests[child_test_num++],
+							width, pass);
+					if (err)
+						goto err_out;
+				}
 			}
+			cleanup_shell_logs(tmpdir);
 		}
 		if (!sequential) {
 			/* Parallel mode starts tests but doesn't finish them. Do that now. */

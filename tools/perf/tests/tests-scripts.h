@@ -16,6 +16,7 @@ enum shell_setup {
 struct shell_info {
 	const char *base_path;
 	enum shell_setup has_setup;
+	bool store_logs;
 };
 
 struct test_suite **create_script_test_suites(void);

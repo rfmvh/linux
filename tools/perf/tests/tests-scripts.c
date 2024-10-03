@@ -251,6 +251,7 @@ static struct test_suite* prepare_test_suite(int dir_fd)
 
 	test_info->base_path = strdup_check(dirpath);		/* Absolute path to dir */
 	test_info->has_setup = NO_SETUP;
+	test_info->store_logs = false;
 
 	test_suite->priv = test_info;
 	test_suite->desc = NULL;
@@ -427,6 +428,8 @@ static void append_suits_in_dir(int dir_fd,
 			continue;
 		}
 
+		/* Store logs for testsuite is sub-directories */
+		((struct shell_info*)(test_suite->priv))->store_logs = true;
 		if (is_test_script(fd, SHELL_SETUP)) {	/* Check for setup existance */
 			char *desc = shell_test__description(fd, SHELL_SETUP);
 			test_suite->desc = desc;	/* Set the suite name by the setup description */
