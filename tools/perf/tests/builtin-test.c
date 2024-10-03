@@ -4,6 +4,7 @@
  *
  * Builtin regression testing command: ever growing number of sanity tests
  */
+#include <ctype.h>
 #include <fcntl.h>
 #include <ftw.h>
 #include <errno.h>
@@ -197,6 +198,21 @@ static test_fnptr test_function(const struct test_suite *t, int subtest)
 		return t->test_cases[0].run_case;
 
 	return t->test_cases[subtest].run_case;
+}
+
+/* Replace non-alphanumeric characters with _ */
+static void check_dir_name(const char *src, char *dst)
+{
+	size_t i;
+	size_t len = strlen(src);
+
+	for (i = 0; i < len; i++) {
+		if (!isalnum(src[i]))
+			dst[i] = '_';
+		else
+			dst[i] = src[i];
+	}
+	dst[i] = '\0';
 }
 
 static int delete_file(const char *fpath, const struct stat *sb __maybe_unused,
