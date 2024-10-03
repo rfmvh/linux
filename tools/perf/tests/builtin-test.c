@@ -5,6 +5,7 @@
  * Builtin regression testing command: ever growing number of sanity tests
  */
 #include <fcntl.h>
+#include <ftw.h>
 #include <errno.h>
 #include <poll.h>
 #include <unistd.h>
@@ -196,6 +197,82 @@ static test_fnptr test_function(const struct test_suite *t, int subtest)
 		return t->test_cases[0].run_case;
 
 	return t->test_cases[subtest].run_case;
+}
+
+static int delete_file(const char *fpath, const struct stat *sb __maybe_unused,
+						 int typeflag, struct FTW *ftwbuf)
+{
+	int rv = -1;
+
+	/* Stop traversal if going too deep */
+	if (ftwbuf->level > 5) {
+		pr_err("Tree traversal reached level %d, stopping.", ftwbuf->level);
+		return rv;
+	}
+
+	/* Remove only expected directories */
+	if (typeflag == FTW_D || typeflag == FTW_DP){
+		const char *dirname = fpath + ftwbuf->base;
+
+		if (strcmp(dirname, "logs") && strcmp(dirname, "examples") &&
+			strcmp(dirname, "header_tar") && strncmp(dirname, "perf_", 5)) {
+				pr_err("Unknown directory %s", dirname);
+				return rv;
+			 }
+	}
+
+	/* Attempt to remove the file */
+	rv = remove(fpath);
+	if (rv)
+		pr_err("Failed to remove file: %s", fpath);
+
+	return rv;
+}
+
+static char *setup_shell_logs(const char *name)
+{
+	char template[PATH_MAX], valid_name[strlen(name)+1];
+	char *temp_dir;
+
+	check_dir_name(name, valid_name);
+	if (snprintf(template, PATH_MAX, "/tmp/perf_test_%s.XXXXXX", valid_name) < 0) {
+		pr_err("Failed to create log dir template");
+		// TODO what if fails?
+		return NULL;
+	}
+
+	temp_dir = mkdtemp(template);
+	if (temp_dir) {
+		printf("DEBUG: Got rundir named: %s\n", temp_dir);
+		setenv("PERFSUITE_RUN_DIR", temp_dir, 1);
+		return strdup(temp_dir);
+	}
+	else {
+		pr_err("Failed to create the temporary directory");
+		// TODO what if fails?
+	}
+
+	return NULL;
+}
+
+static void cleanup_shell_logs(char *dirname)
+{
+	char *keep_logs = getenv("PERFTEST_KEEP_LOGS");
+
+	/* Check if logs should be kept and cleanup */
+	if (dirname) {
+		if (!keep_logs || strcmp(keep_logs, "y") != 0) {
+			printf("DEBUG: Cleaning rundir named: %s\n", dirname);
+			nftw(dirname, delete_file, 8, FTW_DEPTH | FTW_PHYS);
+		}
+		free(dirname);
+	}
+	else {
+		// TODO what if fails?
+		printf("DEBUG: NO RUNDIR\n");
+	}
+
+	unsetenv("PERFSUITE_RUN_DIR");
 }
 
 static bool perf_test__matches(const char *desc, int curr, int argc, const char *argv[])
@@ -449,6 +526,12 @@ static int __cmd_test(int argc, const char *argv[], struct intlist *skiplist)
 				return err;
 			}
 		} else {
+			char *tmpdir = NULL;
+
+			/* Setup temporary log files */
+			if (t->priv)
+				tmpdir = setup_shell_logs(t->desc);
+
 			for (int subi = 0, subn = num_subtests(t); subi < subn; subi++) {
 				int err;
 
@@ -461,6 +544,7 @@ static int __cmd_test(int argc, const char *argv[], struct intlist *skiplist)
 				if (err)
 					return err;
 			}
+			cleanup_shell_logs(tmpdir);
 		}
 	}
 	for (i = 0; i < child_test_num; i++) {
