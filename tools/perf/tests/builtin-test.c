@@ -4,6 +4,7 @@
  *
  * Builtin regression testing command: ever growing number of sanity tests
  */
+#include <ctype.h>
 #include <fcntl.h>
 #include <ftw.h>
 #include <errno.h>
@@ -218,6 +219,21 @@ static bool test_exclusive(const struct test_suite *t, int subtest)
 	return t->test_cases[subtest].exclusive;
 }
 
+/* Replace non-alphanumeric characters with _ */
+static void check_dir_name(const char *src, char *dst)
+{
+	size_t i;
+	size_t len = strlen(src);
+
+	for (i = 0; i < len; i++) {
+		if (!isalnum(src[i]))
+			dst[i] = '_';
+		else
+			dst[i] = src[i];
+	}
+	dst[i] = '\0';
+}
+
 static int delete_file(const char *fpath, const struct stat *sb __maybe_unused,
 						 int typeflag, struct FTW *ftwbuf)
 {
@@ -263,10 +279,12 @@ static bool create_logs(struct test_suite *t, int pass){
 
 static char *setup_shell_logs(const char *name)
 {
-	char template[PATH_MAX];
+	char template[PATH_MAX], valid_name[strlen(name)+1];
 	char *temp_dir;
 
-	if (snprintf(template, PATH_MAX, "/tmp/perf_test_%s.XXXXXX", name) < 0) {
+	check_dir_name(name, valid_name);
+
+	if (snprintf(template, PATH_MAX, "/tmp/perf_test_%s.XXXXXX", valid_name) < 0) {
 		pr_err("Failed to create log dir template");
 		return NULL; /* Skip the testsuite */
 	}
