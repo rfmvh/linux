@@ -198,6 +198,22 @@ static test_fnptr test_function(const struct test_suite *t, int subtest)
 	return t->test_cases[subtest].run_case;
 }
 
+/* If setup fails, skip all test cases */
+static void check_shell_setup(const struct test_suite *t, int ret)
+{
+	struct shell_info* test_info;
+
+	if (!t->priv)
+		return;
+
+	test_info = t->priv;
+
+	if (ret == TEST_SETUP_FAIL)
+		test_info->has_setup = FAILED_SETUP;
+	else if (test_info->has_setup == RUN_SETUP)
+		test_info->has_setup = PASSED_SETUP;
+}
+
 static bool perf_test__matches(const char *desc, int curr, int argc, const char *argv[])
 {
 	int i;
@@ -255,7 +271,8 @@ static int print_test_result(struct test_suite *t, int i, int subtest, int resul
 	case TEST_OK:
 		pr_info(" Ok\n");
 		break;
-	case TEST_SKIP: {
+	case TEST_SKIP:
+	case TEST_SETUP_FAIL:{
 		const char *reason = skip_reason(t, subtest);
 
 		if (reason)
@@ -330,6 +347,7 @@ static int finish_test(struct child_test *child_test, int width)
 	}
 	/* Clean up child process. */
 	ret = finish_command(&child_test->process);
+	check_shell_setup(t, ret);
 	if (verbose == 1 && ret == TEST_FAIL) {
 		/* Add header for test that was skipped above. */
 		if (has_subtests(t))
@@ -356,6 +374,7 @@ static int start_test(struct test_suite *test, int i, int subi, struct child_tes
 		err = test_function(test, subi)(test, subi);
 		pr_debug("---- end ----\n");
 		print_test_result(test, i, subi, err, width);
+		check_shell_setup(test, err);
 		return 0;
 	}
 
