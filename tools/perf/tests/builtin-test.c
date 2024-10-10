@@ -193,6 +193,22 @@ static test_fnptr test_function(const struct test_suite *t, int subtest)
 	return t->test_cases[subtest].run_case;
 }
 
+/* If setup fails, skip all test cases */
+static void check_shell_setup(const struct test_suite *t, int ret)
+{
+	struct shell_info* test_info;
+
+	if (!t->priv)
+		return;
+
+	test_info = t->priv;
+
+	if (ret == TEST_SETUP_FAIL)
+		test_info->has_setup = FAILED_SETUP;
+	else if (test_info->has_setup == RUN_SETUP)
+		test_info->has_setup = PASSED_SETUP;
+}
+
 static bool test_exclusive(const struct test_suite *t, int subtest)
 {
 	if (subtest <= 0)
@@ -269,8 +285,6 @@ err_out:
 	return -err;
 }
 
-#define TEST_RUNNING -3
-
 static int print_test_result(struct test_suite *t, int i, int subtest, int result, int width,
 			     int running)
 {
@@ -288,7 +302,8 @@ static int print_test_result(struct test_suite *t, int i, int subtest, int resul
 	case TEST_OK:
 		pr_info(" Ok\n");
 		break;
-	case TEST_SKIP: {
+	case TEST_SKIP:
+	case TEST_SETUP_FAIL:{
 		const char *reason = skip_reason(t, subtest);
 
 		if (reason)
@@ -401,6 +416,7 @@ static void finish_test(struct child_test **child_tests, int running_test, int c
 	}
 	/* Clean up child process. */
 	ret = finish_command(&child_test->process);
+	check_shell_setup(t, ret);
 	if (verbose > 1 || (verbose == 1 && ret == TEST_FAIL))
 		fprintf(stderr, "%s", err_output.buf);
 
@@ -423,6 +439,7 @@ static int start_test(struct test_suite *test, int i, int subi, struct child_tes
 			err = test_function(test, subi)(test, subi);
 			pr_debug("---- end ----\n");
 			print_test_result(test, i, subi, err, width, /*running=*/0);
+			check_shell_setup(test, err);
 		}
 		return 0;
 	}
