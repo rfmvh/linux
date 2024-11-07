@@ -87,7 +87,10 @@ else
 	# when $PERFSUITE_RUN_DIR is not set, logs will be placed here
 	export CURRENT_TEST_DIR="."
 	export LOGS_DIR="."
+<<<<<<< HEAD
 	export HEADER_TAR_DIR="./header_tar"
+=======
+>>>>>>> bf1535427399 (perf testsuite: Merge settings files for shell tests)
 fi
 
 
