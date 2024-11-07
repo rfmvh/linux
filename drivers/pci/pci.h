@@ -858,7 +858,7 @@ static inline int devm_of_pci_bridge_init(struct device *dev, struct pci_host_br
 	return 0;
 }
 
-static inline bool of_pci_is_supply_present(struct device_node *np);
+static inline bool of_pci_is_supply_present(struct device_node *np)
 {
 	return false;
 }
