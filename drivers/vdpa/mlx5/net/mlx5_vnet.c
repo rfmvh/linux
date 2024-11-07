@@ -193,6 +193,11 @@ static __virtio16 cpu_to_mlx5vdpa16(struct mlx5_vdpa_dev *mvdev, u16 val)
 	return __cpu_to_virtio16(mlx5_vdpa_is_little_endian(mvdev), val);
 }
 
+static __virtio32 cpu_to_mlx5vdpa32(struct mlx5_vdpa_dev *mvdev, u32 val)
+{
+	return __cpu_to_virtio32(mlx5_vdpa_is_little_endian(mvdev), val);
+}
+
 static u16 ctrl_vq_idx(struct mlx5_vdpa_dev *mvdev)
 {
 	if (!(mvdev->actual_features & BIT_ULL(VIRTIO_NET_F_MQ)))
@@ -3898,6 +3903,13 @@ static int mlx5_vdpa_dev_add(struct vdpa_mgmt_dev *v_mdev, const char *name,
 	init_rwsem(&ndev->reslock);
 	config = &ndev->config;
 
+	/*
+	 * mlx5_vdpa vDPA devices currently don't support reporting or
+	 * setting the speed or duplex.
+	 */
+	config->speed  = cpu_to_mlx5vdpa32(mvdev, SPEED_UNKNOWN);
+	config->duplex = DUPLEX_UNKNOWN;
+
 	if (add_config->mask & BIT_ULL(VDPA_ATTR_DEV_NET_CFG_MTU)) {
 		err = config_func_mtu(mdev, add_config->net.mtu);
 		if (err)
@@ -3963,28 +3975,28 @@ static int mlx5_vdpa_dev_add(struct vdpa_mgmt_dev *v_mdev, const char *name,
 	mvdev->vdev.dma_dev = &mdev->pdev->dev;
 	err = mlx5_vdpa_alloc_resources(&ndev->mvdev);
 	if (err)
-		goto err_mpfs;
+		goto err_alloc;
 
 	err = mlx5_vdpa_init_mr_resources(mvdev);
 	if (err)
-		goto err_res;
+		goto err_alloc;
 
 	if (MLX5_CAP_GEN(mvdev->mdev, umem_uid_0)) {
 		err = mlx5_vdpa_create_dma_mr(mvdev);
 		if (err)
-			goto err_mr_res;
+			goto err_alloc;
 	}
 
 	err = alloc_fixed_resources(ndev);
 	if (err)
-		goto err_mr;
+		goto err_alloc;
 
 	ndev->cvq_ent.mvdev = mvdev;
 	INIT_WORK(&ndev->cvq_ent.work, mlx5_cvq_kick_handler);
 	mvdev->wq = create_singlethread_workqueue("mlx5_vdpa_wq");
 	if (!mvdev->wq) {
 		err = -ENOMEM;
-		goto err_res2;
+		goto err_alloc;
 	}
 
 	mvdev->vdev.mdev = &mgtdev->mgtdev;
@@ -4010,17 +4022,6 @@ err_setup_vq_res:
 	_vdpa_unregister_device(&mvdev->vdev);
 err_reg:
 	destroy_workqueue(mvdev->wq);
-err_res2:
-	free_fixed_resources(ndev);
-err_mr:
-	mlx5_vdpa_clean_mrs(mvdev);
-err_mr_res:
-	mlx5_vdpa_destroy_mr_resources(mvdev);
-err_res:
-	mlx5_vdpa_free_resources(&ndev->mvdev);
-err_mpfs:
-	if (!is_zero_ether_addr(config->mac))
-		mlx5_mpfs_del_mac(pfmdev, config->mac);
 err_alloc:
 	put_device(&mvdev->vdev.dev);
 	return err;
